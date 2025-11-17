@@ -6,14 +6,16 @@ import cabinet from '@/pages/cabinet.vue'
 import Corzina from '@/pages/Corzina.vue'
 import About from '@/pages/about.vue'
 import Contacts from '@/pages/Contacts.vue'
+import AdminLogin from '@/pages/adminLogin.vue'
 
 const routes = [
   { path: '/', component: home },
   { path: '/catalog', component: catalog },
   { path: '/cabinet', component: cabinet },
+  { path: '/admin-login', component: AdminLogin },
   { path: '/Corzina', component: Corzina },
   { path: '/about', component: About },
-{path:  '/contacts', component: Contacts}
+  { path: '/contacts', component: Contacts }
 ]
 
 const router = createRouter({

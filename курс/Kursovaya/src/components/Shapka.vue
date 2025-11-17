@@ -19,6 +19,7 @@
         <RouterLink to="/catalog" class="hover:text-blue-600 transition">Каталог</RouterLink>
         <RouterLink to="/about" class="hover:text-blue-600 transition">О нас</RouterLink>
         <RouterLink to="/contacts" class="hover:text-blue-600 transition">Контакты</RouterLink>
+        <RouterLink to="/admin-login" class="text-blue-600 font-semibold hover:underline transition">Админ вход</RouterLink>
       </nav>
 
       <!-- Иконки: поиск, профиль, корзина -->
