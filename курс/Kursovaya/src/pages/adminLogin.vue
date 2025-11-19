@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { reactive } from 'vue';
-import { useRouter, useRoute, RouterLink } from 'vue-router';
+import { useRouter, RouterLink } from 'vue-router';
 
 interface Notification {
   message: string;
   type: 'success' | 'error';
 }
 
-const API_URL = 'http://localhost:8080/api';
 const router = useRouter();
-const route = useRoute();
+const API_URL = 'http://localhost:8080/api';
 
 const loginForm = reactive({
   email: 'admin@gmail.com',
@@ -56,10 +55,8 @@ async function loginAdmin() {
 
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(data.user));
-
     showNotification('Добро пожаловать, администратор!', 'success');
-    const redirectTo = (route.query.redirect as string) || '/cabinet';
-    setTimeout(() => router.push(redirectTo), 500);
+    setTimeout(() => router.push('/cabinet'), 800);
   } catch (error) {
     console.error('Admin login error:', error);
     showNotification('Ошибка подключения к серверу', 'error');
@@ -123,7 +120,5 @@ async function loginAdmin() {
     </div>
   </div>
 </template>
-
-
 
 

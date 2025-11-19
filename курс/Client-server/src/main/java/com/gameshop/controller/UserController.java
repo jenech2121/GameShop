@@ -40,14 +40,7 @@ public class UserController {
             String email = credentials.get("email");
             String password = credentials.get("password");
             User user = userService.login(email, password);
-            UserDTO userDTO = new UserDTO();
-            userDTO.setId(user.getId());
-            userDTO.setFullName(user.getFullName());
-            userDTO.setEmail(user.getEmail());
-            userDTO.setRole(user.getRole().name());
-            userDTO.setStatus(user.getStatus().name());
-            userDTO.setLastLoginAt(user.getLastLoginAt() != null ? user.getLastLoginAt().toString() : null);
-            userDTO.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
+            UserDTO userDTO = new UserDTO(user.getId(), user.getEmail(), null, user.getRole().name(), user.getStatus().name());
             String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().name());
             Map<String, Object> response = new HashMap<>();
             response.put("user", userDTO);

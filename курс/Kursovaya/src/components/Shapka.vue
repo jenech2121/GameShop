@@ -1,43 +1,4 @@
-<script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-
-interface User {
-  id: number;
-  email: string;
-  role: string;
-  status: string;
-}
-
-const currentUser = ref<User | null>(null);
-
-function readStoredUser() {
-  const savedUser = localStorage.getItem('user');
-  currentUser.value = savedUser ? JSON.parse(savedUser) : null;
-}
-
-function handleAuthChange(event?: Event) {
-  event?.preventDefault?.();
-  readStoredUser();
-}
-
-const profileLabel = computed(() => {
-  if (!currentUser.value) {
-    return 'Личный Кабинет';
-  }
-  const userEmail = currentUser.value.email;
-  return userEmail ? `Профиль ${userEmail}` : 'Профиль';
-});
-
-onMounted(() => {
-  readStoredUser();
-  window.addEventListener('storage', handleAuthChange);
-  window.addEventListener('auth-changed', handleAuthChange);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('storage', handleAuthChange);
-  window.removeEventListener('auth-changed', handleAuthChange);
-});
+<script setup>
 </script>
 
 
@@ -85,7 +46,7 @@ onBeforeUnmount(() => {
         <path fill-rule="evenodd" d="M18.685 19.097A9.723 9.723 0 0 0 21.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 0 0 3.065 7.097A9.716 9.716 0 0 0 12 21.75a9.716 9.716 0 0 0 6.685-2.653Zm-12.54-1.285A7.486 7.486 0 0 1 12 15a7.486 7.486 0 0 1 5.855 2.812A8.224 8.224 0 0 1 12 20.25a8.224 8.224 0 0 1-5.855-2.438ZM15.75 9a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" clip-rule="evenodd" />
         </svg>
 
-        <RouterLink to="/cabinet" class="hover:text-blue-600 transition text-lg font-medium text-gray-700">{{ profileLabel }}</RouterLink>
+        <RouterLink to="/cabinet" class="hover:text-blue-600 transition text-lg font-medium text-gray-700">Личный Кабинет </RouterLink>
       </div>
       </div>
     </div>

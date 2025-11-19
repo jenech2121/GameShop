@@ -19,6 +19,7 @@ import FooterP from '@/components/FooterP.vue'
   <FirstPage/>
 <SecondPage/>
 <ThirdPage/>
+<CalcView/>
 
 </main>
 

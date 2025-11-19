@@ -105,11 +105,6 @@ public class OrderService {
             throw new RuntimeException("You are not allowed to update this order");
         }
 
-        // Проверка: нельзя изменить статус, если заказ уже доставлен или отменен
-        if (order.getStatus() == Order.OrderStatus.DELIVERED || order.getStatus() == Order.OrderStatus.CANCELLED) {
-            throw new RuntimeException("Cannot change status: order is already " + order.getStatus().name() + ". Status can only be set once.");
-        }
-
         String action = request.getAction() != null ? request.getAction().toUpperCase() : "";
         switch (action) {
             case "DELIVERED":

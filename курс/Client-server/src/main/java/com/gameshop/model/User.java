@@ -25,9 +25,6 @@ public class User {
     @Column(nullable = false)
     private String password;
 
-    @Column(name = "full_name", nullable = false)
-    private String fullName = "User";
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserRole role = UserRole.USER;
@@ -67,8 +64,6 @@ public class User {
         lastLoginAt = LocalDateTime.now();
     }
 }
-
-
 
 
 

@@ -89,7 +89,3 @@ WHERE NOT EXISTS (SELECT 1 FROM products WHERE name = 'Crucial MX500 1TB SATA');
 
 
 
-
-
-
-
