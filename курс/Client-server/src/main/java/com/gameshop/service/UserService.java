@@ -45,6 +45,7 @@ public class UserService {
         
         User user = new User();
         user.setEmail(userDTO.getEmail());
+        user.setFullName(resolveFullName(userDTO));
         user.setPassword(passwordEncoder.encode(userDTO.getPassword()));
         user.setRole(User.UserRole.USER);
         user.setStatus(User.UserStatus.ACTIVE);
@@ -72,18 +73,30 @@ public class UserService {
     }
     
     @Transactional
-    public UserDTO updateUserStatus(Long id, User.UserStatus status) {
+    public UserDTO updateUserStatus(Long id, User.UserStatus status, Long currentUserId) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+        
+        // Проверка: администратор не может изменять свой собственный статус
+        if (currentUserId != null && user.getId().equals(currentUserId)) {
+            throw new RuntimeException("You cannot change your own status");
+        }
+        
         user.setStatus(status);
         user = userRepository.save(user);
         return toDTO(user);
     }
     
     @Transactional
-    public UserDTO updateUserRole(Long id, User.UserRole role) {
+    public UserDTO updateUserRole(Long id, User.UserRole role, Long currentUserId) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+        
+        // Проверка: администратор не может изменять свою собственную роль
+        if (currentUserId != null && user.getId().equals(currentUserId)) {
+            throw new RuntimeException("You cannot change your own role");
+        }
+        
         user.setRole(role);
         user = userRepository.save(user);
         return toDTO(user);
@@ -107,11 +120,25 @@ public class UserService {
     private UserDTO toDTO(User user) {
         UserDTO dto = new UserDTO();
         dto.setId(user.getId());
+        dto.setFullName(user.getFullName());
         dto.setEmail(user.getEmail());
         dto.setRole(user.getRole().name());
         dto.setStatus(user.getStatus().name());
         dto.setLastLoginAt(user.getLastLoginAt() != null ? user.getLastLoginAt().toString() : null);
+        dto.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
         return dto;
+    }
+
+    private String resolveFullName(UserDTO userDTO) {
+        String provided = userDTO.getFullName();
+        if (provided != null && !provided.trim().isEmpty()) {
+            return provided.trim();
+        }
+        String email = userDTO.getEmail();
+        if (email != null && email.contains("@")) {
+            return email.substring(0, email.indexOf('@'));
+        }
+        return "User";
     }
 }
 

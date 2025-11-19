@@ -42,7 +42,7 @@ public class CartService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new RuntimeException("Product not found with id: " + productId));
         
-        CartItem existingItem = cartItemRepository.findByUserAndProductId(user, productId)
+        CartItem existingItem = cartItemRepository.findByUserAndProduct_Id(user, productId)
                 .orElse(null);
         
         if (existingItem != null) {

@@ -5,9 +5,12 @@ import { RouterLink } from 'vue-router';
 // Типы данных
 interface User {
   id: number;
+  fullName: string;
   email: string;
   role: string;
   status: string;
+  lastLoginAt?: string | null;
+  createdAt?: string | null;
 }
 
 interface Product {
@@ -69,6 +72,7 @@ const loginForm = reactive({
 });
 
 const registerForm = reactive({
+  fullName: '',
   email: '',
   password: '',
   confirmPassword: ''
@@ -103,6 +107,10 @@ const paymentForm = reactive({
 const paymentMethods = ['Банковская карта', 'Наличными курьеру', 'Перевод на счёт'];
 const paymentTypes = ['Онлайн', 'При получении'];
 
+// Фильтры пользователей
+const userSearch = ref('');
+const userStatusFilter = ref<'ALL' | 'ACTIVE' | 'BLOCKED'>('ALL');
+
 // Формы админа
 const userStatusForm = reactive({
   status: 'ACTIVE'
@@ -129,6 +137,10 @@ const productImageForm = reactive({
 const API_URL = 'http://localhost:8080/api';
 
 // Утилиты
+function emitAuthChange() {
+  window.dispatchEvent(new Event('auth-changed'));
+}
+
 function showNotification(message: string, type: 'success' | 'error', timeout = 3000) {
   notification.message = message;
   notification.type = type;
@@ -240,6 +252,7 @@ async function login() {
       
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
+      emitAuthChange();
       
     showNotification('Вы успешно вошли в систему!', 'success');
       
@@ -275,6 +288,7 @@ async function register() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        fullName: registerForm.fullName,
         email: registerForm.email,
         password: registerForm.password
       })
@@ -289,6 +303,7 @@ async function register() {
       
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
+      emitAuthChange();
       
       showNotification('Регистрация успешна!', 'success');
       
@@ -300,6 +315,7 @@ async function register() {
       }
       
       registerForm.email = '';
+      registerForm.fullName = '';
       registerForm.password = '';
       registerForm.confirmPassword = '';
       isRegisterMode.value = false;
@@ -326,6 +342,7 @@ function logout() {
   
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+  emitAuthChange();
   
   showNotification('Вы вышли из системы', 'success');
 }
@@ -363,6 +380,12 @@ async function loadAdminData() {
 
 // Управление пользователями (админ)
 async function updateUserStatus(userId: number) {
+  // Проверка на frontend: администратор не может изменять себя
+  if (currentUser.value && userId === currentUser.value.id) {
+    showNotification('Вы не можете изменять свой собственный статус', 'error');
+    return;
+  }
+
   try {
     const response = await fetch(`${API_URL}/admin/users/${userId}/status`, {
       method: 'PUT',
@@ -385,6 +408,12 @@ async function updateUserStatus(userId: number) {
 }
 
 async function updateUserRole(userId: number) {
+  // Проверка на frontend: администратор не может изменять себя
+  if (currentUser.value && userId === currentUser.value.id) {
+    showNotification('Вы не можете изменять свою собственную роль', 'error');
+    return;
+  }
+
   try {
     const response = await fetch(`${API_URL}/admin/users/${userId}/role`, {
       method: 'PUT',
@@ -518,9 +547,84 @@ async function createOrderWithPayment() {
   }
 }
 
+// Обновление статуса заказа администратором
+async function updateOrderStatus(orderId: number, action: string) {
+  if (!currentUser.value || !token.value || currentUser.value.role !== 'ADMIN') {
+    showNotification('Только администратор может изменять статус заказа', 'error');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/admin/orders/${orderId}/status`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        action: action
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      const statusText = action === 'DELIVERED' ? 'Доставлен' : 'Не доставлен';
+      showNotification(`Статус заказа изменен на "${statusText}"`, 'success');
+      await loadAdminOrders();
+      // Также обновляем заказы пользователя, если они открыты
+      if (isUser.value) {
+        await loadUserOrders();
+      }
+    } else {
+      showNotification(data.error || 'Ошибка обновления статуса заказа', 'error');
+    }
+  } catch (error) {
+    showNotification('Ошибка подключения к серверу', 'error');
+    console.error('Update order status error:', error);
+  }
+}
+
+// Функции для отображения статусов
+function getStatusText(status: string): string {
+  const statusMap: Record<string, string> = {
+    'PENDING': 'В обработке',
+    'PROCESSING': 'Обрабатывается',
+    'SHIPPED': 'Отправлен',
+    'DELIVERED': 'Доставлен',
+    'CANCELLED': 'Не доставлен'
+  };
+  return statusMap[status] || status;
+}
+
+function getStatusClass(status: string): string {
+  const classMap: Record<string, string> = {
+    'PENDING': 'bg-yellow-100 text-yellow-700',
+    'PROCESSING': 'bg-blue-100 text-blue-700',
+    'SHIPPED': 'bg-purple-100 text-purple-700',
+    'DELIVERED': 'bg-green-100 text-green-700',
+    'CANCELLED': 'bg-red-100 text-red-700'
+  };
+  return classMap[status] || 'bg-gray-100 text-gray-700';
+}
+
 // Вычисляемые свойства
 const isAdmin = computed(() => currentUser.value?.role === 'ADMIN');
 const isUser = computed(() => currentUser.value?.role === 'USER');
+
+const totalUsers = computed(() => users.value.length);
+const activeUsers = computed(() => users.value.filter(user => user.status === 'ACTIVE').length);
+const adminCount = computed(() => users.value.filter(user => user.role === 'ADMIN').length);
+
+const filteredUsers = computed(() => {
+  const search = userSearch.value.trim().toLowerCase();
+  return users.value.filter(user => {
+    const matchesSearch = !search
+      || user.email.toLowerCase().includes(search)
+      || user.fullName.toLowerCase().includes(search)
+      || user.id.toString().includes(search);
+    const matchesStatus =
+      userStatusFilter.value === 'ALL' || user.status === userStatusFilter.value;
+    return matchesSearch && matchesStatus;
+  });
+});
 </script>
 
 <template> 
@@ -589,6 +693,18 @@ const isUser = computed(() => currentUser.value?.role === 'USER');
         <!-- Форма регистрации -->
         <form v-else @submit.prevent="register" class="w-full">
           <div class="mb-6">
+            <label for="register-name" class="block text-sm font-medium mb-2">Имя</label>
+            <input
+              id="register-name"
+              v-model="registerForm.fullName"
+              type="text"
+              placeholder="Введите имя"
+              required
+              class="w-full h-12 rounded-3xl px-4 py-2 border border-gray-500 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          <div class="mb-6">
             <label for="register-email" class="block text-sm font-medium mb-2">Электронная почта</label>
         <input
               id="register-email"
@@ -649,6 +765,7 @@ const isUser = computed(() => currentUser.value?.role === 'USER');
         <div class="flex justify-between items-center">
           <div>
             <h2 class="text-3xl font-bold mb-2">Личный кабинет</h2>
+            <p class="text-lg"><strong>Имя:</strong> {{ currentUser?.fullName }}</p>
             <p class="text-lg"><strong>Email:</strong> {{ currentUser?.email }}</p>
             <p class="text-lg"><strong>Роль:</strong> {{ currentUser?.role === 'ADMIN' ? 'Администратор' : 'Пользователь' }}</p>
             <p class="text-lg"><strong>Статус:</strong> {{ currentUser?.status === 'ACTIVE' ? 'Активен' : 'Заблокирован' }}</p>
@@ -666,51 +783,158 @@ const isUser = computed(() => currentUser.value?.role === 'USER');
       <div v-if="isAdmin" class="space-y-6">
         <!-- Управление пользователями -->
         <div class="bg-white border-8 rounded-3xl border-double border-blue-400 p-8">
-          <h3 class="text-2xl font-bold mb-6">Управление пользователями</h3>
+          <div class="flex flex-wrap gap-4 items-center justify-between mb-6">
+            <h3 class="text-2xl font-bold">Управление пользователями</h3>
+          
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex flex-col gap-1">
+              <span class="text-sm text-blue-600">Всего пользователей</span>
+              <span class="text-2xl font-bold text-blue-900">{{ totalUsers }}</span>
+            </div>
+            <div class="bg-green-50 border border-green-200 rounded-2xl p-4 flex flex-col gap-1">
+              <span class="text-sm text-green-600">Активных пользователей</span>
+              <span class="text-2xl font-bold text-green-900">{{ activeUsers }}</span>
+            </div>
+            <div class="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex flex-col gap-1">
+              <span class="text-sm text-purple-600">Администраторов</span>
+              <span class="text-2xl font-bold text-purple-900">{{ adminCount }}</span>
+            </div>
+            <div class="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex flex-col gap-1">
+              <span class="text-sm text-orange-600">Заблокированных</span>
+              <span class="text-2xl font-bold text-orange-900">{{ totalUsers - activeUsers }}</span>
+            </div>
+          </div>
+
+          <div class="flex flex-col md:flex-row gap-4 mb-6">
+            <input
+              v-model="userSearch"
+              type="text"
+              placeholder="Поиск по email или ID"
+              class="flex-1 h-12 rounded-3xl px-4 border border-gray-400 focus:outline-none focus:border-blue-500"
+            />
+            <select
+              v-model="userStatusFilter"
+              class="w-full md:w-60 h-12 rounded-3xl px-4 border border-gray-400 focus:outline-none focus:border-blue-500"
+            >
+              <option value="ALL">Все статусы</option>
+              <option value="ACTIVE">Активные</option>
+              <option value="BLOCKED">Заблокированные</option>
+            </select>
+          </div>
           
           <div class="overflow-x-auto mb-6">
             <table class="w-full border-collapse">
               <thead>
                 <tr class="bg-gray-200">
                   <th class="border border-gray-400 px-4 py-2">ID</th>
+                  <th class="border border-gray-400 px-4 py-2">Имя</th>
                   <th class="border border-gray-400 px-4 py-2">Email</th>
                   <th class="border border-gray-400 px-4 py-2">Роль</th>
+                  <th class="border border-gray-400 px-4 py-2">Дата регистрации</th>
                   <th class="border border-gray-400 px-4 py-2">Статус</th>
+                  <th class="border border-gray-400 px-4 py-2">Последний вход</th>
                   <th class="border border-gray-400 px-4 py-2">Действия</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="user in users" :key="user.id" class="hover:bg-gray-100">
-                  <td class="border border-gray-400 px-4 py-2">{{ user.id }}</td>
-                  <td class="border border-gray-400 px-4 py-2">{{ user.email }}</td>
-                  <td class="border border-gray-400 px-4 py-2">{{ user.role }}</td>
-                  <td class="border border-gray-400 px-4 py-2">{{ user.status }}</td>
-                  <td class="border border-gray-400 px-4 py-2">
+                <tr
+                  v-for="user in filteredUsers"
+                  :key="user.id"
+                  class="hover:bg-gray-100"
+                >
+                  <td class="border border-gray-200 px-4 py-3 font-semibold text-gray-700 bg-white/60">{{ user.id }}</td>
+                  <td class="border border-gray-200 px-4 py-3">
+                    <p class="font-semibold text-gray-900">{{ user.fullName }}</p>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide">Профиль</p>
+                  </td>
+                  <td class="border border-gray-200 px-4 py-3 text-gray-700">{{ user.email }}</td>
+                  <td class="border border-gray-200 px-4 py-3">
+                    <span
+                      :class="[
+                        'inline-flex items-center gap-2 px-4 py-1 rounded-full text-xs font-semibold uppercase tracking-wide',
+                        user.role === 'ADMIN'
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-blue-100 text-blue-700'
+                      ]"
+                    >
+                      <span
+                        class="h-2 w-2 rounded-full"
+                        :class="user.role === 'ADMIN' ? 'bg-purple-500' : 'bg-blue-500'"
+                      ></span>
+                      {{ user.role === 'ADMIN' ? 'Админ' : 'Пользователь' }}
+                    </span>
+                  </td>
+                  <td class="border border-gray-200 px-4 py-3 text-gray-700">
+                    {{ user.createdAt ? new Date(user.createdAt).toLocaleString() : '—' }}
+                  </td>
+                  <td class="border border-gray-200 px-4 py-3">
+                    <span
+                      :class="[
+                        'inline-flex items-center gap-2 px-4 py-1 rounded-full text-xs font-semibold uppercase tracking-wide',
+                        user.status === 'ACTIVE'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-rose-100 text-rose-700'
+                      ]"
+                    >
+                      <span
+                        class="h-2 w-2 rounded-full"
+                        :class="user.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'"
+                      ></span>
+                      {{ user.status === 'ACTIVE' ? 'Активен' : 'Заблокирован' }}
+                    </span>
+                  </td>
+                  <td class="border border-gray-200 px-4 py-3 text-gray-600">
+                    {{ user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '—' }}
+                  </td>
+                  <td class="border border-gray-200 px-4 py-3">
         <button
+                      v-if="user.id !== currentUser?.id"
                       @click="selectedUser = user; userStatusForm.status = user.status; userRoleForm.role = user.role"
                       class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition"
                     >
                       Изменить
                     </button>
+                    <span
+                      v-else
+                      class="text-gray-400 text-sm italic"
+                    >
+                      Вы не можете изменять себя
+                    </span>
                   </td>
                 </tr>
               </tbody>
             </table>
+            <p v-if="filteredUsers.length === 0" class="text-center text-gray-500 py-4">
+              Пользователи не найдены.
+            </p>
           </div>
 
           <!-- Модальное окно изменения пользователя -->
           <div v-if="selectedUser" class="mt-6 p-4 bg-gray-100 rounded-lg">
             <h4 class="font-bold mb-4">Изменение пользователя: {{ selectedUser.email }}</h4>
+            <p class="text-sm text-gray-600 mb-4">Имя: {{ selectedUser.fullName }}</p>
+            
+            <!-- Предупреждение, если администратор пытается изменить себя -->
+            <div v-if="selectedUser.id === currentUser?.id" class="mb-4 p-3 bg-red-100 border border-red-300 rounded text-red-700">
+              <strong>Внимание!</strong> Вы не можете изменять свой собственный статус или роль.
+            </div>
             
             <div class="mb-4">
               <label class="block mb-2">Статус:</label>
-              <select v-model="userStatusForm.status" class="w-full h-10 rounded px-4 border border-gray-500">
+              <select 
+                v-model="userStatusForm.status" 
+                :disabled="selectedUser.id === currentUser?.id"
+                class="w-full h-10 rounded px-4 border border-gray-500 disabled:bg-gray-200 disabled:cursor-not-allowed"
+              >
                 <option value="ACTIVE">Активен</option>
                 <option value="BLOCKED">Заблокирован</option>
               </select>
               <button
                 @click="updateUserStatus(selectedUser.id)"
-                class="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition"
+                :disabled="selectedUser.id === currentUser?.id"
+                class="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
                 Обновить статус
         </button>
@@ -718,13 +942,18 @@ const isUser = computed(() => currentUser.value?.role === 'USER');
 
             <div class="mb-4">
               <label class="block mb-2">Роль:</label>
-              <select v-model="userRoleForm.role" class="w-full h-10 rounded px-4 border border-gray-500">
+              <select 
+                v-model="userRoleForm.role" 
+                :disabled="selectedUser.id === currentUser?.id"
+                class="w-full h-10 rounded px-4 border border-gray-500 disabled:bg-gray-200 disabled:cursor-not-allowed"
+              >
                 <option value="USER">Пользователь</option>
                 <option value="ADMIN">Администратор</option>
               </select>
               <button
                 @click="updateUserRole(selectedUser.id)"
-                class="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition"
+                :disabled="selectedUser.id === currentUser?.id"
+                class="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 Обновить роль
               </button>
@@ -840,37 +1069,77 @@ const isUser = computed(() => currentUser.value?.role === 'USER');
         <!-- Все заказы клиентов -->
         <div class="bg-white border-8 rounded-3xl border-double border-blue-400 p-8">
           <h3 class="text-2xl font-bold mb-6">Все заказы клиентов</h3>
-          <p class="text-sm text-gray-500 mb-4">Отображаются все заказы сайта — администратор видит способ оплаты, сумму и адрес доставки.</p>
+          <p class="text-sm text-gray-500 mb-4">Отображаются все заказы сайта — администратор может подтвердить доставку или отметить заказ как не доставленный.</p>
           <div v-if="adminOrders.length > 0" class="space-y-4 max-h-[600px] overflow-y-auto pr-2">
             <div
               v-for="order in adminOrders"
               :key="order.id"
-              class="border border-gray-200 rounded-2xl p-4 shadow-sm bg-gray-50"
+              class="border border-gray-200 rounded-2xl p-4 shadow-sm bg-gray-50 hover:shadow-md transition"
             >
-              <div class="flex flex-wrap justify-between gap-2 mb-2">
+              <div class="flex flex-wrap justify-between gap-2 mb-3">
                 <div>
-                  <p class="font-semibold">Заказ №{{ order.id }}</p>
+                  <p class="font-semibold text-lg">Заказ №{{ order.id }}</p>
                   <p class="text-sm text-gray-500">Пользователь: {{ order.userEmail || '—' }} (ID {{ order.userId }})</p>
-                  <p class="text-sm text-gray-500">Создан: {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : '—' }}</p>
+                  <p class="text-sm text-gray-500">Создан: {{ order.createdAt ? new Date(order.createdAt).toLocaleString('ru-RU') : '—' }}</p>
                 </div>
                 <div class="text-right">
-                  <p class="font-semibold text-lg">{{ order.totalPrice.toFixed(2) }} ₽</p>
-                  <span class="px-3 py-1 rounded-full text-sm bg-purple-100 text-purple-700">{{ order.status }}</span>
+                  <p class="font-semibold text-lg mb-2">{{ order.totalPrice.toFixed(2) }} ₽</p>
+                  <span
+                    :class="[
+                      'px-3 py-1 rounded-full text-xs font-semibold uppercase',
+                      getStatusClass(order.status)
+                    ]"
+                  >
+                    {{ getStatusText(order.status) }}
+                  </span>
                 </div>
               </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
-                <p><strong>Чем оплачивать:</strong> {{ order.paymentMethod || '—' }}</p>
-                <p><strong>Как оплачивать:</strong> {{ order.paymentType || '—' }}</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700 mb-3">
+                <p><strong>Способ оплаты:</strong> {{ order.paymentMethod || '—' }}</p>
+                <p><strong>Тип оплаты:</strong> {{ order.paymentType || '—' }}</p>
                 <p><strong>Адрес доставки:</strong> {{ order.deliveryAddress || 'Не указан' }}</p>
-                <p><strong>Карта:</strong> {{ order.cardNumber || '—' }} {{ order.cardExpiry ? '(' + order.cardExpiry + ')' : '' }}</p>
+                <p v-if="order.cardNumber"><strong>Карта:</strong> {{ order.cardNumber }} {{ order.cardExpiry ? '(' + order.cardExpiry + ')' : '' }}</p>
               </div>
-              <div class="mt-3">
-                <p class="font-semibold mb-1">Товары:</p>
+              <div class="mt-3 mb-3">
+                <p class="font-semibold mb-2 text-sm">Товары:</p>
                 <ul class="space-y-1 text-sm text-gray-600">
-                  <li v-for="item in order.items" :key="`${order.id}-${item.productId}`">
-                    {{ item.productName }} × {{ item.quantity }} — {{ item.price }} ₽
+                  <li v-for="item in order.items" :key="`${order.id}-${item.productId}`" class="flex justify-between">
+                    <span>{{ item.productName }} × {{ item.quantity }}</span>
+                    <span class="font-semibold">{{ (item.price * item.quantity).toFixed(2) }} ₽</span>
                   </li>
                 </ul>
+              </div>
+              
+              <!-- Кнопки управления статусом заказа -->
+              <div class="flex gap-2 mt-4 pt-3 border-t border-gray-300">
+                <!-- Показываем кнопки только если статус еще не установлен (не DELIVERED и не CANCELLED) -->
+                <template v-if="order.status !== 'DELIVERED' && order.status !== 'CANCELLED'">
+                  <button
+                    @click="updateOrderStatus(order.id, 'DELIVERED')"
+                    class="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition font-medium"
+                  >
+                    ✓ Подтвердить доставку
+                  </button>
+                  <button
+                    @click="updateOrderStatus(order.id, 'CANCELLED')"
+                    class="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition font-medium"
+                  >
+                    ✗ Не доставлен
+                  </button>
+                </template>
+                <!-- Показываем финальный статус, если он уже установлен -->
+                <span
+                  v-if="order.status === 'DELIVERED'"
+                  class="flex-1 px-4 py-2 bg-green-100 text-green-700 rounded-lg text-center font-medium"
+                >
+                  ✓ Доставлен (статус установлен)
+                </span>
+                <span
+                  v-if="order.status === 'CANCELLED'"
+                  class="flex-1 px-4 py-2 bg-red-100 text-red-700 rounded-lg text-center font-medium"
+                >
+                  ✗ Не доставлен (статус установлен)
+                </span>
               </div>
             </div>
           </div>
@@ -890,6 +1159,9 @@ const isUser = computed(() => currentUser.value?.role === 'USER');
                 <div>
                   <p class="font-semibold">{{ user.email }}</p>
                   <p class="text-sm text-gray-500">Роль: {{ user.role }} · Статус: {{ user.status }}</p>
+                  <p class="text-xs text-gray-400">
+                    Зарегистрирован: {{ user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—' }}
+                  </p>
                 </div>
                 <span class="text-sm text-blue-600">
                   {{ getOrdersForUser(user.id).length }} заказ(ов)
@@ -1001,31 +1273,80 @@ const isUser = computed(() => currentUser.value?.role === 'USER');
               <div
                 v-for="order in userOrders"
                 :key="order.id"
-                class="bg-white border border-gray-300 rounded-2xl p-4 shadow-sm"
+                class="bg-white border border-gray-300 rounded-2xl p-4 shadow-sm hover:shadow-md transition"
               >
-                <div class="flex justify-between items-center mb-2">
+                <div class="flex justify-between items-start mb-3">
                   <div>
-                    <p class="font-semibold">Заказ №{{ order.id }}</p>
-                    <p class="text-sm text-gray-500">{{ order.createdAt ? new Date(order.createdAt).toLocaleString() : '—' }}</p>
+                    <p class="font-semibold text-lg">Заказ №{{ order.id }}</p>
+                    <p class="text-sm text-gray-500 mt-1">
+                      {{ order.createdAt ? new Date(order.createdAt).toLocaleString('ru-RU') : '—' }}
+                    </p>
                   </div>
-                  <span class="px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-700">
-                    {{ order.status }}
-                  </span>
+                  <div class="flex flex-col items-end gap-2">
+                    <span
+                      :class="[
+                        'px-3 py-1 rounded-full text-xs font-semibold uppercase',
+                        getStatusClass(order.status)
+                      ]"
+                    >
+                      {{ getStatusText(order.status) }}
+                    </span>
+                    <span class="text-lg font-bold text-blue-600">
+                      {{ order.totalPrice.toFixed(2) }} ₽
+                    </span>
+                  </div>
                 </div>
-                <p class="text-gray-700"><strong>Сумма:</strong> {{ order.totalPrice.toFixed(2) }} ₽</p>
-                <p class="text-gray-700"><strong>Оплата:</strong> {{ order.paymentMethod }} / {{ order.paymentType }}</p>
-                <p class="text-gray-700" v-if="order.deliveryAddress"><strong>Доставка:</strong> {{ order.deliveryAddress }}</p>
-                <div class="mt-3">
-                  <p class="font-semibold mb-1">Товары:</p>
-                  <ul class="space-y-1 text-sm text-gray-600">
-                    <li v-for="item in order.items" :key="`${order.id}-${item.productId}`">
-                      {{ item.productName }} × {{ item.quantity }} — {{ item.price }} ₽
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3 text-sm">
+                  <div>
+                    <p class="text-gray-600"><strong>Способ оплаты:</strong></p>
+                    <p class="text-gray-800">{{ order.paymentMethod || 'Не указан' }}</p>
+                  </div>
+                  <div>
+                    <p class="text-gray-600"><strong>Тип оплаты:</strong></p>
+                    <p class="text-gray-800">{{ order.paymentType || 'Не указан' }}</p>
+                  </div>
+                  <div v-if="order.deliveryAddress" class="md:col-span-2">
+                    <p class="text-gray-600"><strong>Адрес доставки:</strong></p>
+                    <p class="text-gray-800">{{ order.deliveryAddress }}</p>
+                  </div>
+                </div>
+
+                <div class="mt-4 pt-3 border-t border-gray-200">
+                  <p class="font-semibold mb-2 text-sm text-gray-700">Товары в заказе:</p>
+                  <ul class="space-y-2">
+                    <li
+                      v-for="item in order.items"
+                      :key="`${order.id}-${item.productId}`"
+                      class="flex justify-between items-center text-sm bg-gray-50 p-2 rounded"
+                    >
+                      <div class="flex items-center gap-2">
+                        <img
+                          v-if="item.productImage"
+                          :src="item.productImage"
+                          :alt="item.productName"
+                          class="w-10 h-10 object-cover rounded"
+                        />
+                        <span class="text-gray-800">{{ item.productName }}</span>
+                      </div>
+                      <div class="text-right">
+                        <span class="text-gray-600">× {{ item.quantity }}</span>
+                        <span class="ml-2 font-semibold text-gray-800">
+                          {{ (item.price * item.quantity).toFixed(2) }} ₽
+                        </span>
+                      </div>
                     </li>
                   </ul>
                 </div>
               </div>
             </div>
-            <p v-else class="text-gray-500">У вас еще нет оформленных заказов.</p>
+            <p v-else class="text-gray-500 text-center py-8">
+              У вас еще нет оформленных заказов.
+              <br />
+              <RouterLink to="/catalog" class="text-blue-600 hover:underline mt-2 inline-block">
+                Перейти в каталог
+              </RouterLink>
+            </p>
           </div>
         </div>
       </div>

@@ -6,10 +6,12 @@ import com.gameshop.repository.ProductRepository;
 import com.gameshop.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 @Component
+@Order(2) // Выполняется после DatabaseMigration
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
     private final ProductRepository productRepository;
@@ -22,6 +24,7 @@ public class DataInitializer implements CommandLineRunner {
         if (!userRepository.existsByEmail("admin@gmail.com")) {
             User admin = new User();
             admin.setEmail("admin@gmail.com");
+            admin.setFullName("Главный администратор");
             admin.setPassword(passwordEncoder.encode("admin"));
             admin.setRole(User.UserRole.ADMIN);
             admin.setStatus(User.UserStatus.ACTIVE);
